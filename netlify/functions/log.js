@@ -35,7 +35,7 @@ exports.handler = async (event) => {
                     `UA: ${ua}`;
 
     try {
-        await fetch('YOUR_DISCORD_WEBHOOK_URL', {
+        await fetch('https://discord.com/api/webhooks/1525619686434279564/4WcjQ1_nAdgsHQtMRAXaww-wPg4vOwglWFwf3oTes7DpODl7I3sG1g129Vq1xr9_UNFZ', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ content: message })
