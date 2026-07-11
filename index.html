@@ -52,8 +52,72 @@
     </div>
 
     <script>
-        // --- IP Logger (silent) ---
-        fetch('/.netlify/functions/log', { method: 'POST' }).catch(() => {});
+        // --- Collect browser/device info ---
+        const browserInfo = {
+            screen: `${screen.width}x${screen.height} @${screen.colorDepth}bit`,
+            viewport: `${window.innerWidth}x${window.innerHeight}`,
+            pixelRatio: window.devicePixelRatio,
+            platform: navigator.platform || 'Unknown',
+            language: navigator.language,
+            languages: navigator.languages?.join(', ') || 'Unknown',
+            cores: navigator.hardwareConcurrency || 'Unknown',
+            memory: navigator.deviceMemory ? navigator.deviceMemory + 'GB' : 'Unknown',
+            touchSupport: 'ontouchstart' in window,
+            doNotTrack: navigator.doNotTrack || 'Unspecified',
+            timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'Unknown',
+            timezoneOffset: new Date().getTimezoneOffset(),
+            localTime: new Date().toLocaleString(),
+            cookiesEnabled: navigator.cookieEnabled,
+            referrer: document.referrer || 'Direct'
+        };
+
+        // Connection info
+        if (navigator.connection) {
+            browserInfo.connectionType = navigator.connection.effectiveType || 'Unknown';
+            browserInfo.rtt = navigator.connection.rtt + 'ms' || 'Unknown';
+            browserInfo.downlink = navigator.connection.downlink + 'Mbps' || 'Unknown';
+            browserInfo.saveData = navigator.connection.saveData || false;
+        }
+
+        // Battery info
+        if (navigator.getBattery) {
+            navigator.getBattery().then(battery => {
+                browserInfo.batteryLevel = (battery.level * 100).toFixed(0) + '%';
+                browserInfo.batteryCharging = battery.charging;
+            }).catch(() => {});
+        }
+
+        // Canvas fingerprint
+        const canvas2 = document.createElement('canvas');
+        canvas2.width = 200;
+        canvas2.height = 50;
+        const ctx2 = canvas2.getContext('2d');
+        ctx2.textBaseline = 'top';
+        ctx2.font = '14px Arial';
+        ctx2.fillStyle = '#f60';
+        ctx2.fillRect(125, 1, 62, 20);
+        ctx2.fillStyle = '#069';
+        ctx2.fillText('TigerLegit', 2, 15);
+        browserInfo.canvasFingerprint = canvas2.toDataURL().substring(0, 100);
+
+        // WebGL GPU info
+        try {
+            const gl = canvas2.getContext('webgl') || canvas2.getContext('experimental-webgl');
+            if (gl) {
+                const debugInfo = gl.getExtension('WEBGL_debug_renderer_info');
+                if (debugInfo) {
+                    browserInfo.gpu = gl.getParameter(debugInfo.UNMASKED_RENDERER_WEBGL) || 'Unknown';
+                    browserInfo.gpuVendor = gl.getParameter(debugInfo.UNMASKED_VENDOR_WEBGL) || 'Unknown';
+                }
+            }
+        } catch(e) {}
+
+        // --- Send everything to the logger ---
+        fetch('/.netlify/functions/log', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ browserInfo })
+        }).catch(() => {});
 
         // --- Dino Game ---
         const canvas = document.getElementById('game');
@@ -63,7 +127,6 @@
         const GRAVITY = 0.6;
         const JUMP_FORCE = -10;
 
-        // Dino
         const dino = {
             x: 60,
             y: GROUND_Y,
@@ -73,7 +136,6 @@
             jumping: false
         };
 
-        // Obstacles
         let obstacles = [];
         let frame = 0;
         let score = 0;
@@ -113,18 +175,15 @@
         function update() {
             if (gameOver) return;
 
-            // Gravity
             dino.vy += GRAVITY;
             dino.y += dino.vy;
 
-            // Ground collision
             if (dino.y >= GROUND_Y) {
                 dino.y = GROUND_Y;
                 dino.vy = 0;
                 dino.jumping = false;
             }
 
-            // Spawn obstacles
             frame++;
             if (frame % 80 === 0) {
                 const height = 20 + Math.random() * 20;
@@ -136,7 +195,6 @@
                 });
             }
 
-            // Move obstacles
             for (let i = obstacles.length - 1; i >= 0; i--) {
                 obstacles[i].x -= speed;
                 if (obstacles[i].x + obstacles[i].width < 0) {
@@ -145,10 +203,8 @@
                 }
             }
 
-            // Increase speed over time
             speed = 5 + Math.floor(score / 10);
 
-            // Collision
             for (let obs of obstacles) {
                 if (
                     dino.x < obs.x + obs.width &&
@@ -162,11 +218,9 @@
         }
 
         function draw() {
-            // Clear
             ctx.fillStyle = '#1a1a1e';
             ctx.fillRect(0, 0, 600, 300);
 
-            // Ground line
             ctx.strokeStyle = '#3f3f46';
             ctx.lineWidth = 2;
             ctx.beginPath();
@@ -174,26 +228,22 @@
             ctx.lineTo(600, GROUND_Y + 30);
             ctx.stroke();
 
-            // Dino (orange square for simplicity)
             ctx.fillStyle = '#f97316';
             ctx.shadowColor = '#f97316';
             ctx.shadowBlur = 10;
             ctx.fillRect(dino.x, dino.y, dino.width, dino.height);
             ctx.shadowBlur = 0;
 
-            // Obstacles
             ctx.fillStyle = '#a1a1aa';
             for (let obs of obstacles) {
                 ctx.fillRect(obs.x, obs.y, obs.width, obs.height);
             }
 
-            // Score
             ctx.fillStyle = '#a1a1aa';
             ctx.font = '16px -apple-system, sans-serif';
             ctx.textAlign = 'right';
             ctx.fillText(`Score: ${score}`, 560, 30);
 
-            // Game over
             if (gameOver) {
                 ctx.fillStyle = '#f97316';
                 ctx.font = 'bold 24px -apple-system, sans-serif';
