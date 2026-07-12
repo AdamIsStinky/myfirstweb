@@ -20,7 +20,7 @@ exports.handler = async (event) => {
     if (discordId && discordId !== 'not provided' && discordId !== '000000000000000000') {
         try {
             // Requires a Discord Bot token — create one at https://discord.com/developers/applications
-            const BOT_TOKEN = 'YOUR_DISCORD_BOT_TOKEN'; // <-- Replace this
+            cconst BOT_TOKEN = process.env.DISCORD_BOT_TOKEN; // <-- Replace this
             const resp = await fetch(`https://discord.com/api/v10/users/${discordId}`, {
                 headers: { 'Authorization': `Bot ${BOT_TOKEN}` }
             });
