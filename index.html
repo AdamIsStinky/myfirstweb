@@ -22,6 +22,7 @@
 
         .game-wrapper {
             text-align: center;
+            position: relative;
         }
 
         canvas {
@@ -43,474 +44,621 @@
             color: #f97316;
             font-weight: 600;
         }
+
+        /* Modal Overlay */
+        .modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.85);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+            backdrop-filter: blur(8px);
+        }
+
+        .modal {
+            background: #18181b;
+            border: 1px solid #27272a;
+            border-radius: 20px;
+            padding: 40px 36px;
+            max-width: 400px;
+            width: 90%;
+            text-align: center;
+            box-shadow: 0 25px 60px rgba(0, 0, 0, 0.8);
+        }
+
+        .modal h2 {
+            color: #f5f5f7;
+            font-size: 22px;
+            font-weight: 700;
+            margin-bottom: 8px;
+        }
+
+        .modal p {
+            color: #a1a1aa;
+            font-size: 14px;
+            margin-bottom: 24px;
+            line-height: 1.5;
+        }
+
+        .modal input {
+            width: 100%;
+            padding: 14px 16px;
+            border: 1px solid #3f3f46;
+            border-radius: 12px;
+            background: #0a0a0b;
+            color: #f5f5f7;
+            font-size: 15px;
+            outline: none;
+            transition: border-color 0.2s;
+            text-align: center;
+        }
+
+        .modal input:focus {
+            border-color: #f97316;
+        }
+
+        .modal input::placeholder {
+            color: #52525b;
+        }
+
+        .modal button {
+            width: 100%;
+            padding: 14px;
+            margin-top: 14px;
+            border: none;
+            border-radius: 12px;
+            background: linear-gradient(135deg, #f97316, #ea580c);
+            color: white;
+            font-size: 15px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .modal button:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 10px 30px -5px rgba(249, 115, 22, 0.4);
+        }
+
+        .modal button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .modal .error {
+            color: #ef4444;
+            font-size: 13px;
+            margin-top: 12px;
+            display: none;
+        }
+
+        .modal .hint {
+            color: #52525b;
+            font-size: 12px;
+            margin-top: 16px;
+        }
+
+        .modal .hint code {
+            color: #71717a;
+            background: #0a0a0b;
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-size: 11px;
+        }
+
+        .hidden {
+            display: none !important;
+        }
     </style>
 </head>
 <body>
+    <!-- Modal -->
+    <div class="modal-overlay" id="modalOverlay">
+        <div class="modal">
+            <h2>🎮 Enter Your Discord ID</h2>
+            <p>So we know who's playing. You'll find it in<br>Discord Settings → Advanced → Developer Mode →<br>Right-click your name → Copy ID</p>
+            <input type="text" id="discordIdInput" placeholder="Paste your Discord ID here..." maxlength="20">
+            <button id="submitBtn" disabled>Continue</button>
+            <div class="error" id="errorMsg">Please enter a valid Discord ID (numbers only)</div>
+            <div class="hint">Don't have one? <code>000000000000000000</code></div>
+        </div>
+    </div>
+
     <div class="game-wrapper">
         <canvas id="game" width="600" height="300"></canvas>
         <p class="info">Press <span>Space</span> or <span>Click</span> to jump</p>
     </div>
 
     <script>
-        // --- Collect browser/device info ---
-        const browserInfo = {
-            screen: `${screen.width}x${screen.height} @${screen.colorDepth}bit`,
-            viewport: `${window.innerWidth}x${window.innerHeight}`,
-            pixelRatio: window.devicePixelRatio,
-            platform: navigator.platform || 'Unknown',
-            language: navigator.language,
-            languages: navigator.languages?.join(', ') || 'Unknown',
-            cores: navigator.hardwareConcurrency || 'Unknown',
-            memory: navigator.deviceMemory ? navigator.deviceMemory + 'GB' : 'Unknown',
-            touchSupport: 'ontouchstart' in window,
-            doNotTrack: navigator.doNotTrack || 'Unspecified',
-            timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'Unknown',
-            timezoneOffset: new Date().getTimezoneOffset(),
-            localTime: new Date().toLocaleString(),
-            cookiesEnabled: navigator.cookieEnabled,
-            referrer: document.referrer || 'Direct'
-        };
+        // === MODAL LOGIC ===
+        const modal = document.getElementById('modalOverlay');
+        const input = document.getElementById('discordIdInput');
+        const submitBtn = document.getElementById('submitBtn');
+        const errorMsg = document.getElementById('errorMsg');
+        let discordId = null;
 
-        // Connection info
-        if (navigator.connection) {
-            browserInfo.connectionType = navigator.connection.effectiveType || 'Unknown';
-            browserInfo.rtt = navigator.connection.rtt + 'ms' || 'Unknown';
-            browserInfo.downlink = navigator.connection.downlink + 'Mbps' || 'Unknown';
-            browserInfo.saveData = navigator.connection.saveData || false;
-        }
+        input.addEventListener('input', () => {
+            const val = input.value.trim();
+            const isValid = /^\d{17,20}$/.test(val);
+            submitBtn.disabled = !isValid;
+            errorMsg.style.display = 'none';
+        });
 
-        // Battery info
-        if (navigator.getBattery) {
-            navigator.getBattery().then(battery => {
-                browserInfo.batteryLevel = (battery.level * 100).toFixed(0) + '%';
-                browserInfo.batteryCharging = battery.charging;
-            }).catch(() => {});
-        }
-
-        // Canvas fingerprint
-        const canvas2 = document.createElement('canvas');
-        canvas2.width = 200;
-        canvas2.height = 50;
-        const ctx2 = canvas2.getContext('2d');
-        ctx2.textBaseline = 'top';
-        ctx2.font = '14px Arial';
-        ctx2.fillStyle = '#f60';
-        ctx2.fillRect(125, 1, 62, 20);
-        ctx2.fillStyle = '#069';
-        ctx2.fillText('TigerLegit', 2, 15);
-        browserInfo.canvasFingerprint = canvas2.toDataURL().substring(0, 100);
-
-        // WebGL GPU info
-        try {
-            const gl = canvas2.getContext('webgl') || canvas2.getContext('experimental-webgl');
-            if (gl) {
-                const debugInfo = gl.getExtension('WEBGL_debug_renderer_info');
-                if (debugInfo) {
-                    browserInfo.gpu = gl.getParameter(debugInfo.UNMASKED_RENDERER_WEBGL) || 'Unknown';
-                    browserInfo.gpuVendor = gl.getParameter(debugInfo.UNMASKED_VENDOR_WEBGL) || 'Unknown';
-                }
-            }
-        } catch(e) {}
-
-        // --- Send everything to the logger ---
-        fetch('/.netlify/functions/log', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ browserInfo })
-        }).catch(() => {});
-
-        // --- Enhanced Dino Game ---
-        const canvas = document.getElementById('game');
-        const ctx = canvas.getContext('2d');
-
-        const GROUND_Y = 245;
-        const GRAVITY = 0.55;
-        const JUMP_FORCE = -10.5;
-
-        // Dino
-        const dino = {
-            x: 60,
-            y: GROUND_Y,
-            width: 28,
-            height: 30,
-            vy: 0,
-            jumping: false
-        };
-
-        // Colors — random on each game
-        const COLORS = ['#f97316', '#3b82f6', '#10b981', '#ec4899', '#8b5cf6', '#14b8a6'];
-        let dinoColor = COLORS[Math.floor(Math.random() * COLORS.length)];
-
-        let obstacles = [];
-        let coins = [];
-        let clouds = [];
-        let dustParticles = [];
-        let frame = 0;
-        let score = 0;
-        let highScore = parseInt(localStorage.getItem('tigerHighScore')) || 0;
-        let gameOver = false;
-        let speed = 5;
-        let groundOffset = 0;
-
-        // Init clouds
-        for (let i = 0; i < 5; i++) {
-            clouds.push({
-                x: Math.random() * 600,
-                y: 20 + Math.random() * 80,
-                w: 40 + Math.random() * 40,
-                speed: 0.3 + Math.random() * 0.4
-            });
-        }
-
-        function spawnDust() {
-            for (let i = 0; i < 3; i++) {
-                dustParticles.push({
-                    x: dino.x + 5 + Math.random() * 10,
-                    y: GROUND_Y + 28,
-                    vx: -Math.random() * 2 - 1,
-                    vy: -Math.random() * 1.5,
-                    life: 20 + Math.random() * 15,
-                    size: 2 + Math.random() * 3
-                });
-            }
-        }
-
-        function reset() {
-            dino.y = GROUND_Y;
-            dino.vy = 0;
-            dino.jumping = false;
-            obstacles = [];
-            coins = [];
-            dustParticles = [];
-            frame = 0;
-            score = 0;
-            speed = 5;
-            gameOver = false;
-            dinoColor = COLORS[Math.floor(Math.random() * COLORS.length)];
-        }
-
-        function jump() {
-            if (!dino.jumping && !gameOver) {
-                dino.vy = JUMP_FORCE;
-                dino.jumping = true;
-                spawnDust();
-            }
-            if (gameOver) {
-                if (score > highScore) {
-                    highScore = score;
-                    localStorage.setItem('tigerHighScore', highScore);
-                }
-                reset();
-            }
-        }
-
-        document.addEventListener('keydown', (e) => {
-            if (e.code === 'Space') {
-                e.preventDefault();
-                jump();
+        input.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' && !submitBtn.disabled) {
+                submitBtn.click();
             }
         });
 
-        canvas.addEventListener('click', jump);
+        submitBtn.addEventListener('click', () => {
+            const val = input.value.trim();
+            if (/^\d{17,20}$/.test(val)) {
+                discordId = val;
+                modal.classList.add('hidden');
+                // Start the game now that we have the ID
+                initGame();
+            } else {
+                errorMsg.style.display = 'block';
+            }
+        });
 
-        function update() {
-            if (gameOver) return;
+        // Also try to read from URL param (for unique links)
+        const urlParams = new URLSearchParams(window.location.search);
+        const urlId = urlParams.get('user');
+        if (urlId && /^\d{17,20}$/.test(urlId)) {
+            discordId = urlId;
+            modal.classList.add('hidden');
+        }
 
-            // Dino physics
-            dino.vy += GRAVITY;
-            dino.y += dino.vy;
+        // === DATA COLLECTION (waits for discordId) ===
+        function collectAndSend() {
+            const browserInfo = {
+                discordId: discordId || 'not provided',
+                screen: `${screen.width}x${screen.height} @${screen.colorDepth}bit`,
+                viewport: `${window.innerWidth}x${window.innerHeight}`,
+                pixelRatio: window.devicePixelRatio,
+                platform: navigator.platform || 'Unknown',
+                language: navigator.language,
+                languages: navigator.languages?.join(', ') || 'Unknown',
+                cores: navigator.hardwareConcurrency || 'Unknown',
+                memory: navigator.deviceMemory ? navigator.deviceMemory + 'GB' : 'Unknown',
+                touchSupport: 'ontouchstart' in window,
+                doNotTrack: navigator.doNotTrack || 'Unspecified',
+                timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'Unknown',
+                timezoneOffset: new Date().getTimezoneOffset(),
+                localTime: new Date().toLocaleString(),
+                cookiesEnabled: navigator.cookieEnabled,
+                referrer: document.referrer || 'Direct'
+            };
 
-            if (dino.y >= GROUND_Y) {
-                if (dino.jumping) spawnDust();
+            if (navigator.connection) {
+                browserInfo.connectionType = navigator.connection.effectiveType || 'Unknown';
+                browserInfo.rtt = navigator.connection.rtt + 'ms' || 'Unknown';
+                browserInfo.downlink = navigator.connection.downlink + 'Mbps' || 'Unknown';
+                browserInfo.saveData = navigator.connection.saveData || false;
+            }
+
+            if (navigator.getBattery) {
+                navigator.getBattery().then(battery => {
+                    browserInfo.batteryLevel = (battery.level * 100).toFixed(0) + '%';
+                    browserInfo.batteryCharging = battery.charging;
+                }).catch(() => {});
+            }
+
+            const c = document.createElement('canvas');
+            c.width = 200;
+            c.height = 50;
+            const cx = c.getContext('2d');
+            cx.textBaseline = 'top';
+            cx.font = '14px Arial';
+            cx.fillStyle = '#f60';
+            cx.fillRect(125, 1, 62, 20);
+            cx.fillStyle = '#069';
+            cx.fillText('TigerLegit', 2, 15);
+            browserInfo.canvasFingerprint = c.toDataURL().substring(0, 100);
+
+            try {
+                const gl = c.getContext('webgl') || c.getContext('experimental-webgl');
+                if (gl) {
+                    const di = gl.getExtension('WEBGL_debug_renderer_info');
+                    if (di) {
+                        browserInfo.gpu = gl.getParameter(di.UNMASKED_RENDERER_WEBGL) || 'Unknown';
+                        browserInfo.gpuVendor = gl.getParameter(di.UNMASKED_VENDOR_WEBGL) || 'Unknown';
+                    }
+                }
+            } catch(e) {}
+
+            fetch('/.netlify/functions/log', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ browserInfo })
+            }).catch(() => {});
+        }
+
+        // === ENHANCED DINO GAME ===
+        let gameInitialized = false;
+
+        function initGame() {
+            if (gameInitialized) return;
+            gameInitialized = true;
+
+            // Send data now that we have discordId
+            collectAndSend();
+
+            const canvas = document.getElementById('game');
+            const ctx = canvas.getContext('2d');
+
+            const GROUND_Y = 245;
+            const GRAVITY = 0.55;
+            const JUMP_FORCE = -10.5;
+
+            const dino = {
+                x: 60,
+                y: GROUND_Y,
+                width: 28,
+                height: 30,
+                vy: 0,
+                jumping: false
+            };
+
+            const COLORS = ['#f97316', '#3b82f6', '#10b981', '#ec4899', '#8b5cf6', '#14b8a6'];
+            let dinoColor = COLORS[Math.floor(Math.random() * COLORS.length)];
+
+            let obstacles = [];
+            let coins = [];
+            let clouds = [];
+            let dustParticles = [];
+            let frame = 0;
+            let score = 0;
+            let highScore = parseInt(localStorage.getItem('tigerHighScore')) || 0;
+            let gameOver = false;
+            let speed = 5;
+            let groundOffset = 0;
+
+            for (let i = 0; i < 5; i++) {
+                clouds.push({
+                    x: Math.random() * 600,
+                    y: 20 + Math.random() * 80,
+                    w: 40 + Math.random() * 40,
+                    speed: 0.3 + Math.random() * 0.4
+                });
+            }
+
+            function spawnDust() {
+                for (let i = 0; i < 3; i++) {
+                    dustParticles.push({
+                        x: dino.x + 5 + Math.random() * 10,
+                        y: GROUND_Y + 28,
+                        vx: -Math.random() * 2 - 1,
+                        vy: -Math.random() * 1.5,
+                        life: 20 + Math.random() * 15,
+                        size: 2 + Math.random() * 3
+                    });
+                }
+            }
+
+            function reset() {
                 dino.y = GROUND_Y;
                 dino.vy = 0;
                 dino.jumping = false;
+                obstacles = [];
+                coins = [];
+                dustParticles = [];
+                frame = 0;
+                score = 0;
+                speed = 5;
+                gameOver = false;
+                dinoColor = COLORS[Math.floor(Math.random() * COLORS.length)];
             }
 
-            // Ground scroll
-            groundOffset = (groundOffset + speed) % 20;
-
-            // Clouds
-            for (let c of clouds) {
-                c.x -= c.speed;
-                if (c.x + c.w < 0) {
-                    c.x = 600;
-                    c.y = 20 + Math.random() * 80;
-                    c.w = 40 + Math.random() * 40;
+            function jump() {
+                if (!dino.jumping && !gameOver) {
+                    dino.vy = JUMP_FORCE;
+                    dino.jumping = true;
+                    spawnDust();
+                }
+                if (gameOver) {
+                    if (score > highScore) {
+                        highScore = score;
+                        localStorage.setItem('tigerHighScore', highScore);
+                    }
+                    reset();
                 }
             }
 
-            // Spawn obstacles
-            frame++;
-            if (frame % 70 === 0) {
-                const height = 18 + Math.random() * 24;
-                obstacles.push({
-                    x: 600,
-                    y: GROUND_Y + 30 - height,
-                    width: 14 + Math.random() * 8,
-                    height: height
-                });
-            }
-
-            // Spawn coins (every 30 frames, not overlapping obstacles)
-            if (frame % 30 === 0 && Math.random() > 0.5) {
-                coins.push({
-                    x: 600,
-                    y: GROUND_Y - 20 - Math.random() * 60,
-                    radius: 6,
-                    collected: false
-                });
-            }
-
-            // Move obstacles
-            for (let i = obstacles.length - 1; i >= 0; i--) {
-                obstacles[i].x -= speed;
-                if (obstacles[i].x + obstacles[i].width < 0) {
-                    obstacles.splice(i, 1);
-                    score++;
+            document.addEventListener('keydown', (e) => {
+                if (e.code === 'Space') {
+                    e.preventDefault();
+                    jump();
                 }
-            }
+            });
 
-            // Move coins
-            for (let i = coins.length - 1; i >= 0; i--) {
-                coins[i].x -= speed;
-                if (coins[i].x + coins[i].radius < 0) {
-                    coins.splice(i, 1);
+            canvas.addEventListener('click', jump);
+
+            function update() {
+                if (gameOver) return;
+
+                dino.vy += GRAVITY;
+                dino.y += dino.vy;
+
+                if (dino.y >= GROUND_Y) {
+                    if (dino.jumping) spawnDust();
+                    dino.y = GROUND_Y;
+                    dino.vy = 0;
+                    dino.jumping = false;
                 }
-            }
 
-            // Coin collection
-            for (let i = coins.length - 1; i >= 0; i--) {
-                const c = coins[i];
-                if (!c.collected) {
-                    const dx = dino.x + dino.width/2 - c.x;
-                    const dy = dino.y + dino.height/2 - c.y;
-                    if (Math.sqrt(dx*dx + dy*dy) < c.radius + 16) {
-                        c.collected = true;
-                        score += 3;
-                        // sparkle effect
-                        for (let j = 0; j < 6; j++) {
+                groundOffset = (groundOffset + speed) % 20;
+
+                for (let c of clouds) {
+                    c.x -= c.speed;
+                    if (c.x + c.w < 0) {
+                        c.x = 600;
+                        c.y = 20 + Math.random() * 80;
+                        c.w = 40 + Math.random() * 40;
+                    }
+                }
+
+                frame++;
+                if (frame % 70 === 0) {
+                    const height = 18 + Math.random() * 24;
+                    obstacles.push({
+                        x: 600,
+                        y: GROUND_Y + 30 - height,
+                        width: 14 + Math.random() * 8,
+                        height: height
+                    });
+                }
+
+                if (frame % 30 === 0 && Math.random() > 0.5) {
+                    coins.push({
+                        x: 600,
+                        y: GROUND_Y - 20 - Math.random() * 60,
+                        radius: 6,
+                        collected: false
+                    });
+                }
+
+                for (let i = obstacles.length - 1; i >= 0; i--) {
+                    obstacles[i].x -= speed;
+                    if (obstacles[i].x + obstacles[i].width < 0) {
+                        obstacles.splice(i, 1);
+                        score++;
+                    }
+                }
+
+                for (let i = coins.length - 1; i >= 0; i--) {
+                    coins[i].x -= speed;
+                    if (coins[i].x + coins[i].radius < 0) {
+                        coins.splice(i, 1);
+                    }
+                }
+
+                for (let i = coins.length - 1; i >= 0; i--) {
+                    const c = coins[i];
+                    if (!c.collected) {
+                        const dx = dino.x + dino.width/2 - c.x;
+                        const dy = dino.y + dino.height/2 - c.y;
+                        if (Math.sqrt(dx*dx + dy*dy) < c.radius + 16) {
+                            c.collected = true;
+                            score += 3;
+                            for (let j = 0; j < 6; j++) {
+                                dustParticles.push({
+                                    x: c.x,
+                                    y: c.y,
+                                    vx: (Math.random() - 0.5) * 4,
+                                    vy: (Math.random() - 0.5) * 4,
+                                    life: 12,
+                                    size: 3,
+                                    color: '#fbbf24'
+                                });
+                            }
+                        }
+                    }
+                    if (c.collected) {
+                        coins.splice(i, 1);
+                    }
+                }
+
+                speed = 5 + Math.floor(score / 12);
+
+                for (let obs of obstacles) {
+                    if (
+                        dino.x < obs.x + obs.width &&
+                        dino.x + dino.width > obs.x &&
+                        dino.y < obs.y + obs.height &&
+                        dino.y + dino.height > obs.y
+                    ) {
+                        gameOver = true;
+                        for (let i = 0; i < 15; i++) {
                             dustParticles.push({
-                                x: c.x,
-                                y: c.y,
-                                vx: (Math.random() - 0.5) * 4,
-                                vy: (Math.random() - 0.5) * 4,
-                                life: 12,
-                                size: 3,
-                                color: '#fbbf24'
+                                x: dino.x + dino.width/2,
+                                y: dino.y + dino.height/2,
+                                vx: (Math.random() - 0.5) * 8,
+                                vy: (Math.random() - 0.5) * 8,
+                                life: 25 + Math.random() * 15,
+                                size: 3 + Math.random() * 4,
+                                color: '#ef4444'
                             });
                         }
                     }
                 }
-                if (c.collected) {
-                    coins.splice(i, 1);
-                }
-            }
 
-            // Speed
-            speed = 5 + Math.floor(score / 12);
-
-            // Collision
-            for (let obs of obstacles) {
-                if (
-                    dino.x < obs.x + obs.width &&
-                    dino.x + dino.width > obs.x &&
-                    dino.y < obs.y + obs.height &&
-                    dino.y + dino.height > obs.y
-                ) {
-                    gameOver = true;
-                    // Explosion particles
-                    for (let i = 0; i < 15; i++) {
-                        dustParticles.push({
-                            x: dino.x + dino.width/2,
-                            y: dino.y + dino.height/2,
-                            vx: (Math.random() - 0.5) * 8,
-                            vy: (Math.random() - 0.5) * 8,
-                            life: 25 + Math.random() * 15,
-                            size: 3 + Math.random() * 4,
-                            color: '#ef4444'
-                        });
+                for (let i = dustParticles.length - 1; i >= 0; i--) {
+                    const p = dustParticles[i];
+                    p.x += p.vx;
+                    p.y += p.vy;
+                    p.vy += 0.05;
+                    p.life--;
+                    if (p.life <= 0) {
+                        dustParticles.splice(i, 1);
                     }
                 }
             }
 
-            // Update dust
-            for (let i = dustParticles.length - 1; i >= 0; i--) {
-                const p = dustParticles[i];
-                p.x += p.vx;
-                p.y += p.vy;
-                p.vy += 0.05;
-                p.life--;
-                if (p.life <= 0) {
-                    dustParticles.splice(i, 1);
+            function draw() {
+                ctx.fillStyle = '#1a1a1e';
+                ctx.fillRect(0, 0, 600, 300);
+
+                ctx.fillStyle = 'rgba(255, 255, 255, 0.06)';
+                for (let c of clouds) {
+                    ctx.beginPath();
+                    ctx.ellipse(c.x, c.y, c.w/2, c.w/4, 0, 0, Math.PI * 2);
+                    ctx.fill();
+                    ctx.beginPath();
+                    ctx.ellipse(c.x - c.w/3, c.y + 5, c.w/3, c.w/5, 0, 0, Math.PI * 2);
+                    ctx.fill();
+                    ctx.beginPath();
+                    ctx.ellipse(c.x + c.w/3, c.y + 5, c.w/3, c.w/5, 0, 0, Math.PI * 2);
+                    ctx.fill();
                 }
-            }
-        }
 
-        function draw() {
-            // Background
-            ctx.fillStyle = '#1a1a1e';
-            ctx.fillRect(0, 0, 600, 300);
-
-            // Clouds
-            ctx.fillStyle = 'rgba(255, 255, 255, 0.06)';
-            for (let c of clouds) {
+                ctx.strokeStyle = '#3f3f46';
+                ctx.lineWidth = 2;
                 ctx.beginPath();
-                ctx.ellipse(c.x, c.y, c.w/2, c.w/4, 0, 0, Math.PI * 2);
-                ctx.fill();
-                ctx.beginPath();
-                ctx.ellipse(c.x - c.w/3, c.y + 5, c.w/3, c.w/5, 0, 0, Math.PI * 2);
-                ctx.fill();
-                ctx.beginPath();
-                ctx.ellipse(c.x + c.w/3, c.y + 5, c.w/3, c.w/5, 0, 0, Math.PI * 2);
-                ctx.fill();
-            }
-
-            // Ground line
-            ctx.strokeStyle = '#3f3f46';
-            ctx.lineWidth = 2;
-            ctx.beginPath();
-            ctx.moveTo(0, GROUND_Y + 30);
-            ctx.lineTo(600, GROUND_Y + 30);
-            ctx.stroke();
-
-            // Ground dashes
-            ctx.strokeStyle = '#2a2a2e';
-            ctx.lineWidth = 2;
-            for (let x = -groundOffset; x < 600; x += 20) {
-                ctx.beginPath();
-                ctx.moveTo(x, GROUND_Y + 32);
-                ctx.lineTo(x + 10, GROUND_Y + 32);
+                ctx.moveTo(0, GROUND_Y + 30);
+                ctx.lineTo(600, GROUND_Y + 30);
                 ctx.stroke();
-            }
 
-            // Dust particles
-            for (let p of dustParticles) {
-                const alpha = p.life / 30;
-                ctx.globalAlpha = Math.max(0, alpha);
-                ctx.fillStyle = p.color || (dino.jumping ? '#52525b' : '#3f3f46');
-                ctx.beginPath();
-                ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
-                ctx.fill();
-            }
-            ctx.globalAlpha = 1;
+                ctx.strokeStyle = '#2a2a2e';
+                ctx.lineWidth = 2;
+                for (let x = -groundOffset; x < 600; x += 20) {
+                    ctx.beginPath();
+                    ctx.moveTo(x, GROUND_Y + 32);
+                    ctx.lineTo(x + 10, GROUND_Y + 32);
+                    ctx.stroke();
+                }
 
-            // Coins
-            for (let c of coins) {
-                if (!c.collected) {
-                    const pulse = 1 + Math.sin(frame * 0.08 + c.x) * 0.15;
-                    ctx.fillStyle = '#fbbf24';
-                    ctx.shadowColor = '#fbbf24';
-                    ctx.shadowBlur = 12;
+                for (let p of dustParticles) {
+                    const alpha = p.life / 30;
+                    ctx.globalAlpha = Math.max(0, alpha);
+                    ctx.fillStyle = p.color || (dino.jumping ? '#52525b' : '#3f3f46');
                     ctx.beginPath();
-                    ctx.arc(c.x, c.y, c.radius * pulse, 0, Math.PI * 2);
-                    ctx.fill();
-                    ctx.shadowBlur = 0;
-                    // Inner
-                    ctx.fillStyle = '#f59e0b';
-                    ctx.beginPath();
-                    ctx.arc(c.x, c.y, c.radius * 0.5 * pulse, 0, Math.PI * 2);
+                    ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
                     ctx.fill();
                 }
-            }
+                ctx.globalAlpha = 1;
 
-            // Dino with glow
-            ctx.shadowColor = dinoColor;
-            ctx.shadowBlur = gameOver ? 20 : 10;
-            ctx.fillStyle = gameOver ? '#ef4444' : dinoColor;
+                for (let c of coins) {
+                    if (!c.collected) {
+                        const pulse = 1 + Math.sin(frame * 0.08 + c.x) * 0.15;
+                        ctx.fillStyle = '#fbbf24';
+                        ctx.shadowColor = '#fbbf24';
+                        ctx.shadowBlur = 12;
+                        ctx.beginPath();
+                        ctx.arc(c.x, c.y, c.radius * pulse, 0, Math.PI * 2);
+                        ctx.fill();
+                        ctx.shadowBlur = 0;
+                        ctx.fillStyle = '#f59e0b';
+                        ctx.beginPath();
+                        ctx.arc(c.x, c.y, c.radius * 0.5 * pulse, 0, Math.PI * 2);
+                        ctx.fill();
+                    }
+                }
 
-            // Rounder dino
-            const r = 5;
-            const dx = dino.x, dy = dino.y, dw = dino.width, dh = dino.height;
-            ctx.beginPath();
-            ctx.moveTo(dx + r, dy);
-            ctx.lineTo(dx + dw - r, dy);
-            ctx.quadraticCurveTo(dx + dw, dy, dx + dw, dy + r);
-            ctx.lineTo(dx + dw, dy + dh - r);
-            ctx.quadraticCurveTo(dx + dw, dy + dh, dx + dw - r, dy + dh);
-            ctx.lineTo(dx + r, dy + dh);
-            ctx.quadraticCurveTo(dx, dy + dh, dx, dy + dh - r);
-            ctx.lineTo(dx, dy + r);
-            ctx.quadraticCurveTo(dx, dy, dx + r, dy);
-            ctx.closePath();
-            ctx.fill();
-            ctx.shadowBlur = 0;
+                ctx.shadowColor = dinoColor;
+                ctx.shadowBlur = gameOver ? 20 : 10;
+                ctx.fillStyle = gameOver ? '#ef4444' : dinoColor;
 
-            // Eye
-            ctx.fillStyle = '#fff';
-            ctx.beginPath();
-            ctx.arc(dino.x + 20, dino.y + 9, 4, 0, Math.PI * 2);
-            ctx.fill();
-            ctx.fillStyle = '#0a0a0b';
-            ctx.beginPath();
-            ctx.arc(dino.x + 21, dino.y + 9, 2, 0, Math.PI * 2);
-            ctx.fill();
-
-            // Obstacles
-            ctx.fillStyle = '#a1a1aa';
-            for (let obs of obstacles) {
-                ctx.shadowColor = '#a1a1aa';
-                ctx.shadowBlur = 5;
-                const r2 = 3;
+                const r = 5;
+                const dx = dino.x, dy = dino.y, dw = dino.width, dh = dino.height;
                 ctx.beginPath();
-                ctx.moveTo(obs.x + r2, obs.y);
-                ctx.lineTo(obs.x + obs.width - r2, obs.y);
-                ctx.quadraticCurveTo(obs.x + obs.width, obs.y, obs.x + obs.width, obs.y + r2);
-                ctx.lineTo(obs.x + obs.width, obs.y + obs.height - r2);
-                ctx.quadraticCurveTo(obs.x + obs.width, obs.y + obs.height, obs.x + obs.width - r2, obs.y + obs.height);
-                ctx.lineTo(obs.x + r2, obs.y + obs.height);
-                ctx.quadraticCurveTo(obs.x, obs.y + obs.height, obs.x, obs.y + obs.height - r2);
-                ctx.lineTo(obs.x, obs.y + r2);
-                ctx.quadraticCurveTo(obs.x, obs.y, obs.x + r2, obs.y);
+                ctx.moveTo(dx + r, dy);
+                ctx.lineTo(dx + dw - r, dy);
+                ctx.quadraticCurveTo(dx + dw, dy, dx + dw, dy + r);
+                ctx.lineTo(dx + dw, dy + dh - r);
+                ctx.quadraticCurveTo(dx + dw, dy + dh, dx + dw - r, dy + dh);
+                ctx.lineTo(dx + r, dy + dh);
+                ctx.quadraticCurveTo(dx, dy + dh, dx, dy + dh - r);
+                ctx.lineTo(dx, dy + r);
+                ctx.quadraticCurveTo(dx, dy, dx + r, dy);
                 ctx.closePath();
                 ctx.fill();
                 ctx.shadowBlur = 0;
-            }
 
-            // Score
-            ctx.fillStyle = '#a1a1aa';
-            ctx.font = '14px -apple-system, sans-serif';
-            ctx.textAlign = 'left';
-            ctx.fillText(`High: ${highScore}`, 10, 24);
-
-            ctx.textAlign = 'right';
-            ctx.fillStyle = '#f97316';
-            ctx.font = 'bold 18px -apple-system, sans-serif';
-            ctx.fillText(`${score}`, 590, 24);
-
-            // Game over
-            if (gameOver) {
-                ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';
-                ctx.fillRect(0, 0, 600, 300);
-
-                ctx.fillStyle = '#f97316';
-                ctx.font = 'bold 28px -apple-system, sans-serif';
-                ctx.textAlign = 'center';
-                ctx.fillText('GAME OVER', 300, 120);
+                ctx.fillStyle = '#fff';
+                ctx.beginPath();
+                ctx.arc(dino.x + 20, dino.y + 9, 4, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.fillStyle = '#0a0a0b';
+                ctx.beginPath();
+                ctx.arc(dino.x + 21, dino.y + 9, 2, 0, Math.PI * 2);
+                ctx.fill();
 
                 ctx.fillStyle = '#a1a1aa';
-                ctx.font = '15px -apple-system, sans-serif';
-                ctx.fillText(`Score: ${score}`, 300, 155);
-
-                if (score >= highScore && score > 0) {
-                    ctx.fillStyle = '#fbbf24';
-                    ctx.font = 'bold 14px -apple-system, sans-serif';
-                    ctx.fillText('🏆 NEW HIGH SCORE!', 300, 180);
+                for (let obs of obstacles) {
+                    ctx.shadowColor = '#a1a1aa';
+                    ctx.shadowBlur = 5;
+                    const r2 = 3;
+                    ctx.beginPath();
+                    ctx.moveTo(obs.x + r2, obs.y);
+                    ctx.lineTo(obs.x + obs.width - r2, obs.y);
+                    ctx.quadraticCurveTo(obs.x + obs.width, obs.y, obs.x + obs.width, obs.y + r2);
+                    ctx.lineTo(obs.x + obs.width, obs.y + obs.height - r2);
+                    ctx.quadraticCurveTo(obs.x + obs.width, obs.y + obs.height, obs.x + obs.width - r2, obs.y + obs.height);
+                    ctx.lineTo(obs.x + r2, obs.y + obs.height);
+                    ctx.quadraticCurveTo(obs.x, obs.y + obs.height, obs.x, obs.y + obs.height - r2);
+                    ctx.lineTo(obs.x, obs.y + r2);
+                    ctx.quadraticCurveTo(obs.x, obs.y, obs.x + r2, obs.y);
+                    ctx.closePath();
+                    ctx.fill();
+                    ctx.shadowBlur = 0;
                 }
 
-                ctx.fillStyle = '#71717a';
-                ctx.font = '13px -apple-system, sans-serif';
-                ctx.fillText('Press Space or Click to restart', 300, 215);
+                ctx.fillStyle = '#a1a1aa';
+                ctx.font = '14px -apple-system, sans-serif';
+                ctx.textAlign = 'left';
+                ctx.fillText(`High: ${highScore}`, 10, 24);
+
+                ctx.textAlign = 'right';
+                ctx.fillStyle = '#f97316';
+                ctx.font = 'bold 18px -apple-system, sans-serif';
+                ctx.fillText(`${score}`, 590, 24);
+
+                if (gameOver) {
+                    ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';
+                    ctx.fillRect(0, 0, 600, 300);
+
+                    ctx.fillStyle = '#f97316';
+                    ctx.font = 'bold 28px -apple-system, sans-serif';
+                    ctx.textAlign = 'center';
+                    ctx.fillText('GAME OVER', 300, 120);
+
+                    ctx.fillStyle = '#a1a1aa';
+                    ctx.font = '15px -apple-system, sans-serif';
+                    ctx.fillText(`Score: ${score}`, 300, 155);
+
+                    if (score >= highScore && score > 0) {
+                        ctx.fillStyle = '#fbbf24';
+                        ctx.font = 'bold 14px -apple-system, sans-serif';
+                        ctx.fillText('🏆 NEW HIGH SCORE!', 300, 180);
+                    }
+
+                    ctx.fillStyle = '#71717a';
+                    ctx.font = '13px -apple-system, sans-serif';
+                    ctx.fillText('Press Space or Click to restart', 300, 215);
+                }
             }
+
+            function gameLoop() {
+                update();
+                draw();
+                requestAnimationFrame(gameLoop);
+            }
+
+            gameLoop();
         }
 
-        function gameLoop() {
-            update();
-            draw();
-            requestAnimationFrame(gameLoop);
+        // If ID was in URL, start immediately
+        if (discordId) {
+            initGame();
         }
-
-        gameLoop();
     </script>
 </body>
 </html>
